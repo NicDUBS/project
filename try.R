@@ -1,1 +1,2 @@
-"hello word"
+print("hello Nico")
+
