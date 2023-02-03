@@ -15,28 +15,22 @@ library(stringr)
 # as needed and assign to the variables below.
 # For illustration purposes read in admiral test data
 
-data("admiral_dm")
-data("admiral_ds")
-data("admiral_ex")
-data("admiral_ae")
-data("admiral_lb")
-
-dm <- admiral_dm
-ds <- admiral_ds
-ex <- admiral_ex
-ae <- admiral_ae
-lb <- admiral_lb
+dm <- haven::read_xpt(file = "sdtm/dm.xpt")
+ds <- haven::read_xpt(file = "sdtm/ds.xpt")
+ex <- haven::read_xpt(file = "sdtm/ex.xpt")
+ae <- haven::read_xpt(file = "sdtm/ae.xpt")
+lb <- haven::read_xpt(file = "sdtm/lb.xpt")
 
 # When SAS datasets are imported into R using haven::read_sas(), missing
 # character values from SAS appear as "" characters in R, instead of appearing
 # as NA values. Further details can be obtained via the following link:
 # https://pharmaverse.github.io/admiral/articles/admiral.html#handling-of-missing-values
 
-dm <- convert_blanks_to_na(dm)
-ds <- convert_blanks_to_na(ds)
-ex <- convert_blanks_to_na(ex)
-ae <- convert_blanks_to_na(ae)
-lb <- convert_blanks_to_na(lb)
+dm <- admiral::convert_blanks_to_na(dm)
+ds <- admiral::convert_blanks_to_na(ds)
+ex <- admiral::convert_blanks_to_na(ex)
+ae <- admiral::convert_blanks_to_na(ae)
+lb <- admiral::convert_blanks_to_na(lb)
 
 # User defined functions ----
 
@@ -44,20 +38,13 @@ lb <- convert_blanks_to_na(lb)
 #  operates on vectors, which can be used in `mutate`.
 
 # Grouping
-format_racegr1 <- function(x) {
-  case_when(
-    x == "WHITE" ~ "White",
-    x != "WHITE" ~ "Non-white",
-    TRUE ~ "Missing"
-  )
-}
 
 format_agegr1 <- function(x) {
   case_when(
-    x < 18 ~ "<18",
-    between(x, 18, 64) ~ "18-64",
-    x > 64 ~ ">64",
-    TRUE ~ "Missing"
+    x < 65 ~ 1,
+    between(x, 18, 80) ~ 2,
+    x > 80 ~ 3,
+    TRUE ~ NA_integer_
   )
 }
 
@@ -86,6 +73,27 @@ format_eoxxstt <- function(x) {
     TRUE ~ "ONGOING"
   )
 }
+# site group
+table(dm$ARM)
+countSiteID <- as.data.frame(table(dm$SITEID))
+
+
+# Codelist ----
+race_lookup <- tibble::tribble(
+  ~RACE, ~RACEN,
+  "AMERICAN INDIAN OR ALASKA NATIVE", 1,
+  "ASIAN", 2,
+  "BLACK OR AFRICAN AMERICAN", 3,
+  "NATIVE HAWAIIAN OR OTHER PACIFIC ISLANDER", 5,
+  "WHITE", 6
+)
+
+agegr1_lookup <- tibble::tribble(
+  ~AGEGR1, ~AGEGR1N,
+  "<65", 1,
+  "65-80", 2,
+  ">80", 3
+)
 
 # Derivations ----
 # impute start and end time of exposure to first and last respectively, do not impute date
