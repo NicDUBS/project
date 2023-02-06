@@ -20,11 +20,8 @@ ds <- haven::read_xpt(file = "sdtm/ds.xpt")
 ex <- haven::read_xpt(file = "sdtm/ex.xpt")
 ae <- haven::read_xpt(file = "sdtm/ae.xpt")
 lb <- haven::read_xpt(file = "sdtm/lb.xpt")
-<<<<<<< HEAD
 qs <- haven::read_xpt(file = "sdtm/qs.xpt")
-=======
 sv <- haven::read_xpt(file = "sdtm/sv.xpt")
->>>>>>> b5ef6aa4e90ae16af02ef8786747abe86a0394fc
 
 # When SAS datasets are imported into R using haven::read_sas(), missing
 # character values from SAS appear as "" characters in R, instead of appearing
@@ -36,11 +33,8 @@ ds <- admiral::convert_blanks_to_na(ds)
 ex <- admiral::convert_blanks_to_na(ex)
 ae <- admiral::convert_blanks_to_na(ae)
 lb <- admiral::convert_blanks_to_na(lb)
-<<<<<<< HEAD
 qs <- admiral::convert_blanks_to_na(qs)
-=======
 sv <- admiral::convert_blanks_to_na(sv)
->>>>>>> b5ef6aa4e90ae16af02ef8786747abe86a0394fc
 
 # User defined functions ----
 
@@ -71,7 +65,6 @@ format_sitegrp1 <- function(x){
   countTable <- table(dm$SITEID)
 }
 
-<<<<<<< HEAD
 # MMSETOT:	MMSE Total
 # sum of QS.QSORRES values for the subject when QSCAT = MINI-MENTAL STATE
 mental <- qs %>%
@@ -107,17 +100,14 @@ format_DCSREAS <- function(x) {
 
 # EOSSTT: End of Study Status
 # COMPLETED if ADSL.DCDECOD='COMPLETED'. DISCONTINUED if ADSL.DCDECOD not equal to COMPLETED.
-=======
 
 # EOSSTT mapping
->>>>>>> b5ef6aa4e90ae16af02ef8786747abe86a0394fc
 format_eoxxstt <- function(x) {
   case_when(
     x %in% c("COMPLETED") ~ "COMPLETED",
     !is.na(x) ~ "DISCONTINUED",
   )
 }
-<<<<<<< HEAD
 
 # DCDECOD:	Standardized Disposition Term
 # DS.DSDECOD where DSCAT='DISPOSITION EVENT'
@@ -136,8 +126,6 @@ table(dm$ARM)
 countSiteID <- as.data.frame(table(dm$SITEID))
 
 
-=======
->>>>>>> b5ef6aa4e90ae16af02ef8786747abe86a0394fc
 # Codelist ----
 race_lookup <- tibble::tribble(
   ~RACE, ~RACEN,
@@ -155,17 +143,13 @@ agegr1_lookup <- tibble::tribble(
   ">80", 3
 )
 
-<<<<<<< HEAD
-=======
+
 arm_lookup <- tibble::tribble(
   ~ARM, ~ARMN,
   "Placebo", 1,
   "Xanomeline Low Dose", 2,
   "Xanomeline High Dose", 3
 )
->>>>>>> b5ef6aa4e90ae16af02ef8786747abe86a0394fc
-
-
 
 # Derivations ----
 
