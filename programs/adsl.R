@@ -20,6 +20,7 @@ ds <- haven::read_xpt(file = "sdtm/ds.xpt")
 ex <- haven::read_xpt(file = "sdtm/ex.xpt")
 ae <- haven::read_xpt(file = "sdtm/ae.xpt")
 lb <- haven::read_xpt(file = "sdtm/lb.xpt")
+qs <- haven::read_xpt(file = "sdtm/qs.xpt")
 
 # When SAS datasets are imported into R using haven::read_sas(), missing
 # character values from SAS appear as "" characters in R, instead of appearing
@@ -31,6 +32,7 @@ ds <- admiral::convert_blanks_to_na(ds)
 ex <- admiral::convert_blanks_to_na(ex)
 ae <- admiral::convert_blanks_to_na(ae)
 lb <- admiral::convert_blanks_to_na(lb)
+qs <- admiral::convert_blanks_to_na(qs)
 
 # User defined functions ----
 
@@ -64,15 +66,60 @@ format_lddthgr1 <- function(x) {
   )
 }
 
-# EOSSTT mapping
+# MMSETOT:	MMSE Total
+# sum of QS.QSORRES values for the subject when QSCAT = MINI-MENTAL STATE
+mental <- qs %>%
+          filter(qs$QSCAT=="MINI-MENTAL STATE")
+
+summental <- mental %>%
+              group_by(USUBJID) %>%
+              summarise(mmsetot=sum(QSSTRESN))
+
+# DCSREAS:	Reason for Discontinuation from Study
+# Grouping of DCDECOD values to support summarizing study completion status and reason for discontinuation
+format_DCSREAS <- function(x) {
+  y<-case_when(
+    x == "COMPLETED" ~ "Completed",
+    x == "ADVERSE EVENT" ~ "Adverse Event",
+    x == "DEATH" ~ "Death",
+    x == "SCREEN FAILURE" ~ "I/E Not Met",
+    x == "LACK OF EFFICACY" ~ "Lack of Efficacy",
+    x == "LOST TO FOLLOW-UP" ~ "Lost to Follow-up",
+    x == "PHYSICIAN DECISION" ~ "Physician Decision",
+    x == "PROTOCOL VIOLATION" ~ "Protocol Violation",
+    x == "STUDY TERMINATED BY SPONSOR" ~ "Sponsor Decision",
+    x == "WITHDRAWAL BY SUBJECT" ~ "Withdrew Consent",
+    TRUE ~ NA_integer_
+  )
+  if(is.na(y))
+    {
+    warning(paste("WARNING: *USER* Please add :", x))
+  }
+  return(y)
+}
+
+
+# EOSSTT: End of Study Status
+# COMPLETED if ADSL.DCDECOD='COMPLETED'. DISCONTINUED if ADSL.DCDECOD not equal to COMPLETED.
 format_eoxxstt <- function(x) {
   case_when(
     x %in% c("COMPLETED") ~ "COMPLETED",
-    !(x %in% c("COMPLETED", "SCREEN FAILURE")) & !is.na(x) ~ "DISCONTINUED",
-    x %in% c("SCREEN FAILURE") ~ NA_character_,
-    TRUE ~ "ONGOING"
+    !is.na(x) ~ "DISCONTINUED",
   )
 }
+
+# DCDECOD:	Standardized Disposition Term
+# DS.DSDECOD where DSCAT='DISPOSITION EVENT'
+DCDECOD <- ds %>%
+  filter(DSCAT=='DISPOSITION EVENT') %>%
+  rename(DCDECOD=DSDECOD) %>%
+  select (USUBJID, DCDECOD)
+
+# RFENDT: Date of Discontinuation/Completion
+# RFENDTC converted to SAS date
+# a terliner RFENDTC <- ymd(RFENDTC)
+
+
 # site group
 table(dm$ARM)
 countSiteID <- as.data.frame(table(dm$SITEID))
@@ -94,6 +141,9 @@ agegr1_lookup <- tibble::tribble(
   "65-80", 2,
   ">80", 3
 )
+
+
+
 
 # Derivations ----
 # impute start and end time of exposure to first and last respectively, do not impute date
