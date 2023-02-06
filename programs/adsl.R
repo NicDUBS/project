@@ -20,6 +20,7 @@ ds <- haven::read_xpt(file = "sdtm/ds.xpt")
 ex <- haven::read_xpt(file = "sdtm/ex.xpt")
 ae <- haven::read_xpt(file = "sdtm/ae.xpt")
 lb <- haven::read_xpt(file = "sdtm/lb.xpt")
+sv <- haven::read_xpt(file = "sdtm/sv.xpt")
 
 # When SAS datasets are imported into R using haven::read_sas(), missing
 # character values from SAS appear as "" characters in R, instead of appearing
@@ -31,6 +32,7 @@ ds <- admiral::convert_blanks_to_na(ds)
 ex <- admiral::convert_blanks_to_na(ex)
 ae <- admiral::convert_blanks_to_na(ae)
 lb <- admiral::convert_blanks_to_na(lb)
+sv <- admiral::convert_blanks_to_na(sv)
 
 # User defined functions ----
 
@@ -57,15 +59,9 @@ format_bmiblgr1 <- function(x) {
   )
 }
 
-
-format_region1 <- function(x) {
-  case_when(
-    x %in% c("CAN", "USA") ~ "NA",
-    !is.na(x) ~ "RoW",
-    TRUE ~ "Missing"
-  )
+format_sitegrp1 <- function(x){
+  countTable <- table(dm$SITEID)
 }
-
 
 
 # EOSSTT mapping
@@ -77,11 +73,6 @@ format_eoxxstt <- function(x) {
     TRUE ~ "ONGOING"
   )
 }
-# site group
-table(dm$ARM)
-countSiteID <- as.data.frame(table(dm$SITEID))
-
-
 # Codelist ----
 race_lookup <- tibble::tribble(
   ~RACE, ~RACEN,
@@ -99,24 +90,66 @@ agegr1_lookup <- tibble::tribble(
   ">80", 3
 )
 
+arm_lookup <- tibble::tribble(
+  ~ARM, ~ARMN,
+  "Placebo", 1,
+  "Xanomeline Low Dose", 2,
+  "Xanomeline High Dose", 3
+)
+
+
+
 # Derivations ----
-# impute start and end time of exposure to first and last respectively, do not impute date
-ex_ext <- ex %>%
-  derive_vars_dtm(
-    dtc = EXSTDTC,
-    new_vars_prefix = "EXST"
-  ) %>%
+
+# copy the data from dM
+adsl01 <- dm
+
+# add the sitegr1
+sitegr1_01 <-dm %>%
+  dplyr::count(SITEID, ARM) %>%
+  dplyr::filter(n<3) %>%
+  mutate(SITEGR1=900) %>%
+  select(SITEID, SITEGR1) %>%
+  distinct()
+
+  adsl02 <- derive_vars_merged(
+    adsl01,
+    dataset_add = sitegr1_01,
+    by_vars = vars(SITEID)
+  )
+
+  ## derive treatment variables (TRT01P, TRT01A) ----
+  # See also the "Visit and Period Variables" vignette
+  # (https://pharmaverse.github.io/admiral/articles/visits_periods.html#treatment_adsl)
+  adsl03 <- adsl02 %>% mutate(TRT01P = ARM, TRT01A = ACTARM)
+
+  adsl04 <- derive_vars_merged(
+    adsl03,
+    dataset_add = dplyr::rename(arm_lookup,TRT01P=ARM, TRT01PN=ARMN),
+    by_vars = vars(TRT01P)
+  )
+  adsl05 <- derive_vars_merged(
+    adsl04,
+    dataset_add = dplyr::rename(arm_lookup,TRT01A=ARM, TRT01AN=ARMN),
+    by_vars = vars(TRT01A)
+  )
+
+  # impute start and end time of exposure to first and last respectively, do not impute date
+  sv %>% filter(VISITNUM==3) %>%
+    select(USUBJID, SVSTDTC) %>%
+    admiral::derive_vars_dtm(
+      dtc = SVSTDTC,
+      new_vars_prefix = "SVST",
+      highest_imputation="D"
+    )
+
+  %>%
   derive_vars_dtm(
     dtc = EXENDTC,
     new_vars_prefix = "EXEN",
     time_imputation = "last"
   )
 
-adsl <- dm %>%
-  ## derive treatment variables (TRT01P, TRT01A) ----
-  # See also the "Visit and Period Variables" vignette
-  # (https://pharmaverse.github.io/admiral/articles/visits_periods.html#treatment_adsl)
-  mutate(TRT01P = ARM, TRT01A = ACTARM) %>%
   ## derive treatment start date (TRTSDTM) ----
   derive_vars_merged(
     dataset_add = ex_ext,
