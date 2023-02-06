@@ -48,6 +48,16 @@ format_agegr1 <- function(x) {
   )
 }
 
+format_bmiblgr1 <- function(x) {
+  case_when(
+    x < 25 ~ '<25',
+    x >= 25 & x <30 ~ '25-<30',
+    x >= 30 ~ '>=30',
+    TRUE ~ NA_character_
+  )
+}
+
+
 format_region1 <- function(x) {
   case_when(
     x %in% c("CAN", "USA") ~ "NA",
@@ -56,13 +66,7 @@ format_region1 <- function(x) {
   )
 }
 
-format_lddthgr1 <- function(x) {
-  case_when(
-    x <= 30 ~ "<= 30",
-    x > 30 ~ "> 30",
-    TRUE ~ NA_character_
-  )
-}
+
 
 # EOSSTT mapping
 format_eoxxstt <- function(x) {
