@@ -68,15 +68,6 @@ format_sitegrp1 <- function(x){
   countTable <- table(dm$SITEID)
 }
 
-# MMSETOT:	MMSE Total
-# sum of QS.QSORRES values for the subject when QSCAT = MINI-MENTAL STATE
-mental <- qs %>%
-          filter(qs$QSCAT=="MINI-MENTAL STATE")
-
-summental <- mental %>%
-              group_by(USUBJID) %>%
-              summarise(mmsetot=sum(QSSTRESN))
-
 # DCSREAS:	Reason for Discontinuation from Study
 # Grouping of DCDECOD values to support summarizing study completion status and reason for discontinuation
 format_DCSREAS <- function(x) {
@@ -112,24 +103,29 @@ format_eoxxstt <- function(x) {
   )
 }
 
-# DCDECOD:	Standardized Disposition Term
-# DS.DSDECOD where DSCAT='DISPOSITION EVENT'
-DCDECOD <- ds %>%
-  filter(DSCAT=='DISPOSITION EVENT') %>%
-  rename(DCDECOD=DSDECOD) %>%
-  select (USUBJID, DCDECOD)
 
-# RFENDT: Date of Discontinuation/Completion
-# RFENDTC converted to SAS date
-# a terliner RFENDTC <- ymd(RFENDTC)
-
-
-# site group
-table(dm$ARM)
-countSiteID <- as.data.frame(table(dm$SITEID))
-
+#' Create a vector with the Pooled Site Group 1
+#'
+#' @param x a vector with the SiteID (e.g dm$SITEID)
+#' @return sitegr1_lookup a lookup tibble the SITEID and its corresponding
+#' SITGR1. When a site has  less than 3 patients by arm
+#' the site is pooled in SITEGR1=900
+#' @examples
+#' library(admiral.test)
+#' library(dplyr, warn.conflicts = FALSE)
+#' data("admiral_dm")
+#' SITEGR1 <- sitegroup(admiral_dm$SITEID)
+sitegroup <- function(x){
+  devtools::document()
+  table(dm$ARM)
+  countSiteID <- as.data.frame(table(dm$SITEID))
+  SITEGR1 <-  as.factor(ifelse(countSiteID$Freq < 3, 900, levels(countSiteID$Var1)))
+  SITEID <- countSiteID$Var1
+  tibble::tibble(SITEID, SITEGR1)
+}
 
 # Codelist ----
+## Race code list ----
 race_lookup <- tibble::tribble(
   ~RACE, ~RACEN,
   "AMERICAN INDIAN OR ALASKA NATIVE", 1,
@@ -139,6 +135,7 @@ race_lookup <- tibble::tribble(
   "WHITE", 6
 )
 
+## Age group code list ----
 agegr1_lookup <- tibble::tribble(
   ~AGEGR1, ~AGEGR1N,
   "<65", 1,
@@ -146,7 +143,7 @@ agegr1_lookup <- tibble::tribble(
   ">80", 3
 )
 
-
+## ARM code list ----
 arm_lookup <- tibble::tribble(
   ~ARM, ~ARMN,
   "Placebo", 1,
@@ -351,7 +348,7 @@ adsl <- adsl %>%
     new_var = SAFFL,
     condition = (EXDOSE > 0 | (EXDOSE == 0 & str_detect(EXTRT, "PLACEBO")))
   ) %>%
-  ## Groupings and others variables ----
+  ## Groupings and others variables (RACEGR1, AGEGR1, REGION1,LDDTHGR1,DTH30FL, DTHA30FL, DTHB30FL  ) ----
   mutate(
     RACEGR1 = format_racegr1(RACE),
     AGEGR1 = format_agegr1(AGE),
@@ -363,6 +360,27 @@ adsl <- adsl %>%
     DOMAIN = NULL
   )
 
+## derived MMSETOT:	MMSE Total ----
+# sum of QS.QSORRES values for the subject when QSCAT = MINI-MENTAL STATE
+mental <- qs %>%
+  filter(qs$QSCAT=="MINI-MENTAL STATE")
+
+summental <- mental %>%
+  group_by(USUBJID) %>%
+  summarise(mmsetot=sum(QSSTRESN))
+
+
+
+# DCDECOD:	Standardized Disposition Term
+# DS.DSDECOD where DSCAT='DISPOSITION EVENT'
+DCDECOD <- ds %>%
+  filter(DSCAT=='DISPOSITION EVENT') %>%
+  rename(DCDECOD=DSDECOD) %>%
+  select (USUBJID, DCDECOD)
+
+# RFENDT: Date of Discontinuation/Completion
+# RFENDTC converted to SAS date
+# a terliner RFENDTC <- ymd(RFENDTC)
 
 # Save output ----
 
