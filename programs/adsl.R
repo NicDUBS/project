@@ -2,7 +2,9 @@
 #
 # Label: Subject Level Analysis Dataset
 #
-# Bonjour Sophie
+# Bonjour Sophie, j'espere que tu vas bien.
+# Merci à toi et à Lionel.
+
 # Input: dm, ex, ds
 library(admiral)
 library(admiral.test) # Contains example datasets from the CDISC pilot project
