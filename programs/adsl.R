@@ -3,6 +3,7 @@
 # Label: Subject Level Analysis Dataset
 #
 # Bonjour Sophie
+### Salut Nico et Lionel ###
 # Input: dm, ex, ds
 library(admiral)
 library(admiral.test) # Contains example datasets from the CDISC pilot project
