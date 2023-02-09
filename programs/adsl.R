@@ -2,8 +2,14 @@
 #
 # Label: Subject Level Analysis Dataset
 #
+<<<<<<< HEAD
 # Bonjour Sophie
 ### Salut Nico et Lionel ###
+=======
+# Bonjour Sophie, j'espere que tu vas bien.
+# Merci à toi et à Lionel.
+
+>>>>>>> ae5d4c7c729620e93dc5651cc79c1f25a54c616a
 # Input: dm, ex, ds
 library(admiral)
 library(admiral.test) # Contains example datasets from the CDISC pilot project
