@@ -5,7 +5,7 @@
 
 # Input: dm, ex, ds
 library(admiral)
-library(admiral.test) # Contains example datasets from the CDISC pilot project
+#library(admiral.test) # Contains example datasets from the CDISC pilot project
 library(dplyr)
 library(lubridate)
 library(stringr)
@@ -151,11 +151,6 @@ adsl02_01 <- derive_vars_merged(
 )
 adsl02 <- adsl02_01 %>% mutate(SITEGR1 = ifelse(is.na(adsl02$SITEGR1),adsl02$SITEID, adsl02$SITEGR1))
 
-  adsl02 <- derive_vars_merged(
-    adsl01,
-    dataset_add = sitegr1_01,
-    by_vars = vars(SITEID)
-  )
 
   ## derive treatment variables (TRT01P, TRT01A) ----
   # See also the "Visit and Period Variables" vignette
@@ -173,42 +168,57 @@ adsl02 <- adsl02_01 %>% mutate(SITEGR1 = ifelse(is.na(adsl02$SITEGR1),adsl02$SIT
     by_vars = vars(TRT01A)
   )
 
+  ## Derive treatment end/start date TRTSDT/TRTEDT ----
+
   # impute start and end time of exposure to first and last respectively, do not impute date
-  sv %>% filter(VISITNUM==3) %>%
+  trtsdt <- sv %>% filter(VISITNUM==3) %>%
     select(USUBJID, SVSTDTC) %>%
     admiral::derive_vars_dt(
       dtc = SVSTDTC,
       new_vars_prefix = "TRTS"
     ) %>% select(USUBJID, TRTSDT)
 
+  adsl06 <- derive_vars_merged(
+    dataset=adsl05,
+    dataset_add = trtsdt,
+    by_vars=vars(USUBJID))
 
-  ## derive treatment start date (TRTSDTM) ----
-  derive_vars_merged(
-    dataset_add = ex_ext,
-    filter_add = (EXDOSE > 0 |
-      (EXDOSE == 0 &
-        str_detect(EXTRT, "PLACEBO"))) &
-      !is.na(EXSTDTM),
-    new_vars = vars(TRTSDTM = EXSTDTM, TRTSTMF = EXSTTMF),
-    order = vars(EXSTDTM, EXSEQ),
-    mode = "first",
-    by_vars = vars(STUDYID, USUBJID)
-  ) %>%
   ## derive treatment end date (TRTEDTM) ----
-  derive_vars_merged(
-    dataset_add = ex_ext,
-    filter_add = (EXDOSE > 0 |
-      (EXDOSE == 0 &
-        str_detect(EXTRT, "PLACEBO"))) & !is.na(EXENDTM),
-    new_vars = vars(TRTEDTM = EXENDTM, TRTETMF = EXENTMF),
-    order = vars(EXENDTM, EXSEQ),
-    mode = "last",
-    by_vars = vars(STUDYID, USUBJID)
-  ) %>%
-  ## Derive treatment end/start date TRTSDT/TRTEDT ----
-  derive_vars_dtm_to_dt(source_vars = vars(TRTSDTM, TRTEDTM)) %>%
+
+  trtedt <- ex %>% select(USUBJID,EXENDTC) %>%
+      admiral::derive_vars_dt(
+        dtc=EXENDTC,
+        new_vars_prefix = "TRTE"
+      )
+
+  adsl07 <- derive_vars_merged(
+    dataset=adsl06,
+    dataset_add = trtedt,
+    by_vars=vars(USUBJID),
+    order=vars(USUBJID, TRTEDT),
+    mode="last")
+
   ## derive treatment duration (TRTDURD) ----
-  derive_var_trtdurd()
+  adsl08 <- adsl07 %>% derive_var_trtdurd()
+
+
+  ## Population Flags (ITTFL, SAFFL) ----
+  adsl09 <- adsl08 %>%
+    derive_var_merged_exist_flag(
+      dataset_add = ex,
+      by_vars = vars(STUDYID, USUBJID),
+      new_var = SAFFL,
+      condition = (EXDOSE > 0 | (EXDOSE == 0 & str_detect(EXTRT, "PLACEBO")))
+    )   %>%
+   derive_var_merged_exist_flag(
+    dataset_add = dm,
+    by_vars = vars(STUDYID, USUBJID),
+    new_var = ITTFL,
+    condition = (!is.na(ACTARMCD))
+  )
+
+
+
 
 ## Disposition dates, status ----
 # convert character date to numeric date without imputation
@@ -274,6 +284,9 @@ adsl <- adsl %>%
     end_date = DTHDT,
     add_one = FALSE
   )
+
+
+
 
 ## Last known alive date ----
 ae_start_date <- date_source(
@@ -364,6 +377,6 @@ DCDECOD <- ds %>%
 
 # Save output ----
 
-dir <- tempdir() # Change to whichever directory you want to save the dataset in
-saveRDS(adsl, file = file.path(dir, "adsl.rds"), compress = "bzip2")
+adsl <- adsl09
+saveRDS(adsl09, file = file.path('./adam', "adsl.rds"), compress = "bzip2")
 
