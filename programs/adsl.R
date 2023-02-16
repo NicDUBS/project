@@ -2,14 +2,7 @@
 #
 # Label: Subject Level Analysis Dataset
 #
-<<<<<<< HEAD
-# Bonjour Sophie
-### Salut Nico et Lionel ###
-=======
-# Bonjour Sophie, j'espere que tu vas bien.
-# Merci à toi et à Lionel.
 
->>>>>>> ae5d4c7c729620e93dc5651cc79c1f25a54c616a
 # Input: dm, ex, ds
 library(admiral)
 library(admiral.test) # Contains example datasets from the CDISC pilot project
@@ -109,25 +102,6 @@ format_eoxxstt <- function(x) {
 }
 
 
-#' Create a vector with the Pooled Site Group 1
-#'
-#' @param x a vector with the SiteID (e.g dm$SITEID)
-#' @return sitegr1_lookup a lookup tibble the SITEID and its corresponding
-#' SITGR1. When a site has  less than 3 patients by arm
-#' the site is pooled in SITEGR1=900
-#' @examples
-#' library(admiral.test)
-#' library(dplyr, warn.conflicts = FALSE)
-#' data("admiral_dm")
-#' SITEGR1 <- sitegroup(admiral_dm$SITEID)
-sitegroup <- function(x){
-  devtools::document()
-  table(dm$ARM)
-  countSiteID <- as.data.frame(table(dm$SITEID))
-  SITEGR1 <-  as.factor(ifelse(countSiteID$Freq < 3, 900, levels(countSiteID$Var1)))
-  SITEID <- countSiteID$Var1
-  tibble::tibble(SITEID, SITEGR1)
-}
 
 # Codelist ----
 ## Race code list ----
@@ -158,16 +132,24 @@ arm_lookup <- tibble::tribble(
 
 # Derivations ----
 
-# copy the data from dM
+## copy the data from dM ----
 adsl01 <- dm
 
-# add the sitegr1
+## add the Pooled Site Group 1 ----
+
 sitegr1_01 <-dm %>%
   dplyr::count(SITEID, ARM) %>%
   dplyr::filter(n<3) %>%
   mutate(SITEGR1=900) %>%
   select(SITEID, SITEGR1) %>%
   distinct()
+
+adsl02_01 <- derive_vars_merged(
+  adsl01,
+  dataset_add = sitegr1_01,
+  by_vars = vars(SITEID)
+)
+adsl02 <- adsl02_01 %>% mutate(SITEGR1 = ifelse(is.na(adsl02$SITEGR1),adsl02$SITEID, adsl02$SITEGR1))
 
   adsl02 <- derive_vars_merged(
     adsl01,
@@ -194,18 +176,11 @@ sitegr1_01 <-dm %>%
   # impute start and end time of exposure to first and last respectively, do not impute date
   sv %>% filter(VISITNUM==3) %>%
     select(USUBJID, SVSTDTC) %>%
-    admiral::derive_vars_dtm(
+    admiral::derive_vars_dt(
       dtc = SVSTDTC,
-      new_vars_prefix = "SVST",
-      highest_imputation="D"
-    )
+      new_vars_prefix = "TRTS"
+    ) %>% select(USUBJID, TRTSDT)
 
-  %>%
-  derive_vars_dtm(
-    dtc = EXENDTC,
-    new_vars_prefix = "EXEN",
-    time_imputation = "last"
-  )
 
   ## derive treatment start date (TRTSDTM) ----
   derive_vars_merged(
