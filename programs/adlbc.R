@@ -4,10 +4,12 @@
 #
 # Input: adsl, lb
 library(admiral)
-library(admiral.test) # Contains example datasets from the CDISC pilot project
+#library(admiral.test) # Contains example datasets from the CDISC pilot project
 library(dplyr)
 library(lubridate)
 library(stringr)
+library(xportr)
+library(readxl)
 
 # Load source datasets ----
 
@@ -78,9 +80,11 @@ paramchg_lookup <- tibble::tribble(
 # Derivations ----
 
 # Get list of ADSL vars required for derivations
-adsl_vars <- vars(SUBJID, TRTP,TRTPN, TRTA, TRTAN, TRTSDT, TRTEDT, AGE, AGEGR1, AGEGR1N, RACE, RACEN, SEX, COMP24FL, DSRAEFL, SAFFL)
+# need to add when ADSL done:
+# adsl_vars <- vars(SUBJID, TRT01P,TRT01PN, TRT01A, TRT01AN, TRTSDT, TRTEDT, AGE, AGEGR1, AGEGR1N, RACE, RACEN, SEX, COMP24FL, DSRAEFL, SAFFL)
+adsl_vars <- vars(SUBJID, TRT01P, TRT01A, TRTSDT, TRTEDT)
 
-adlb <- chemo %>%
+adlb1 <- chemo %>%
   # Join ADSL with LB (need TRTSDT for ADY derivation)
   derive_vars_merged(
     dataset_add = adsl,
@@ -94,7 +98,7 @@ adlb <- chemo %>%
   ) %>%
   derive_vars_dy(reference_date = TRTSDT, source_vars = vars(ADT))
 
-adlb <- adlb %>%
+adlb2 <- adlb1 %>%
   ## Add PARAMCD PARAM and PARAMN - from LOOK-UP table ----
   # Replace with PARAMCD lookup function
   derive_vars_merged_lookup(
@@ -110,44 +114,16 @@ adlb <- adlb %>%
     AVAL = LBSTRESN,
     AVALC = LBSTRESC,
     ANRLO = LBSTNRLO,
-    ANRHI = LBSTNRHI
+    ANRHI = LBSTNRHI,
+    A1LO = LBSTNRLO,
+    A1HI = LBSTNRHI
   )
 
-# Derive Absolute values from fractional Differentials using WBC
-# Only derive where absolute values do not already exist
-# Need to populate ANRLO and ANRHI for newly created records
-adlb <- adlb %>%
-  # Derive absolute Basophils
-  derive_param_wbc_abs(
-    by_vars = vars(STUDYID, USUBJID, !!!adsl_vars, DOMAIN, VISIT, VISITNUM, ADT, ADY),
-    set_values_to = vars(
-      PARAMCD = "BASO",
-      PARAM = "Basophils Abs (10^9/L)",
-      PARAMN = 6,
-      DTYPE = "CALCULATION",
-      PARCAT1 = "HEMATOLOGY"
-    ),
-    get_unit_expr = extract_unit(PARAM),
-    diff_code = "BASOLE"
-  ) %>%
-  # Derive absolute Lymphocytes
-  derive_param_wbc_abs(
-    by_vars = vars(STUDYID, USUBJID, !!!adsl_vars, DOMAIN, VISIT, VISITNUM, ADT, ADY),
-    set_values_to = vars(
-      PARAMCD = "LYMPH",
-      PARAM = "Lymphocytes Abs (10^9/L)",
-      PARAMN = 25,
-      DTYPE = "CALCULATION",
-      PARCAT1 = "HEMATOLOGY"
-    ),
-    get_unit_expr = extract_unit(PARAM),
-    diff_code = "LYMPHLE"
-  )
 
 ## Get Visit Info ----
 # See also the "Visit and Period Variables" vignette
 # (https://pharmaverse.github.io/admiral/articles/visits_periods.html#visits)
-adlb <- adlb %>%
+adlb3 <- adlb2 %>%
   # Derive Timing
   mutate(
     AVISIT = case_when(
@@ -161,21 +137,14 @@ adlb <- adlb %>%
     )
   )
 
-adlb <- adlb %>%
-  ## Calculate ONTRTFL ----
-  derive_var_ontrtfl(
-    start_date = ADT,
-    ref_start_date = TRTSDT,
-    ref_end_date = TRTEDT,
-    filter_pre_timepoint = AVISIT == "Baseline"
-  )
+
 
 ## Calculate ANRIND : requires the reference ranges ANRLO, ANRHI ----
-adlb <- adlb %>%
+adlb4 <- adlb3 %>%
   derive_var_anrind()
 
 ## Derive baseline flags ----
-adlb <- adlb %>%
+adlb5 <- adlb4 %>%
   # Calculate BASETYPE
   mutate(
     BASETYPE = "LAST"
@@ -193,7 +162,7 @@ adlb <- adlb %>%
   )
 
 ## Derive baseline information ----
-adlb <- adlb %>%
+adlb6 <- adlb5 %>%
   # Calculate BASE
   derive_var_base(
     by_vars = vars(STUDYID, USUBJID, PARAMCD, BASETYPE),
@@ -213,9 +182,10 @@ adlb <- adlb %>%
     new_var = BNRIND
   ) %>%
   # Calculate CHG
-  derive_var_chg() %>%
+  derive_var_chg()
+  #%>%
   # Calculate PCHG
-  derive_var_pchg()
+  #derive_var_pchg()
 
 
 ## Calculate lab grading ----
@@ -223,146 +193,142 @@ adlb <- adlb %>%
 # Assign ATOXDSCL and ATOXDSCH to hold lab grading terms
 # ATOXDSCL and ATOXDSCH hold terms defined by NCI-CTCAEv4.
 # See (https://pharmaverse.github.io/admiral/articles/lab_grading.html#implement_ctcv4)
-grade_lookup <- tibble::tribble(
-  ~PARAMCD, ~ATOXDSCL, ~ATOXDSCH,
-  "ALB", "Hypoalbuminemia", NA_character_,
-  "ALKPH", NA_character_, "Alkaline phosphatase increased",
-  "ALT", NA_character_, "Alanine aminotransferase increased",
-  "AST", NA_character_, "Aspartate aminotransferase increased",
-  "BILI", NA_character_, "Blood bilirubin increased",
-  "CA", "Hypocalcemia", "Hypercalcemia",
-  "CHOLES", NA_character_, "Cholesterol high",
-  "CK", NA_character_, "CPK increased",
-  "CREAT", NA_character_, "Creatinine increased",
-  "GGT", NA_character_, "GGT increased",
-  "GLUC", "Hypoglycemia", "Hyperglycemia",
-  "HGB", "Anemia", "Hemoglobin increased",
-  "POTAS", "Hypokalemia", "Hyperkalemia",
-  "LYMPH", "CD4 lymphocytes decreased", NA_character_,
-  "PHOS", "Hypophosphatemia", NA_character_,
-  "PLAT", "Platelet count decreased", NA_character_,
-  "SODIUM", "Hyponatremia", "Hypernatremia",
-  "WBC", "White blood cell decreased", "Leukocytosis",
-)
-
+#grade_lookup <- tibble::tribble(
+#  ~PARAMCD, ~ATOXDSCL, ~ATOXDSCH,
+#  "ALB", "Hypoalbuminemia", NA_character_,
+#  "ALKPH", NA_character_, "Alkaline phosphatase increased",
+#  "ALT", NA_character_, "Alanine aminotransferase increased",
+#  "AST", NA_character_, "Aspartate aminotransferase increased",
+#  "BILI", NA_character_, "Blood bilirubin increased",
+#  "CA", "Hypocalcemia", "Hypercalcemia",
+#  "CHOLES", NA_character_, "Cholesterol high",
+#  "CK", NA_character_, "CPK increased",
+#  "CREAT", NA_character_, "Creatinine increased",
+#  "GGT", NA_character_, "GGT increased",
+#  "GLUC", "Hypoglycemia", "Hyperglycemia",
+#  "HGB", "Anemia", "Hemoglobin increased",
+#  "POTAS", "Hypokalemia", "Hyperkalemia",
+#  "LYMPH", "CD4 lymphocytes decreased", NA_character_,
+#  "PHOS", "Hypophosphatemia", NA_character_,
+#  "PLAT", "Platelet count decreased", NA_character_,
+#  "SODIUM", "Hyponatremia", "Hypernatremia",
+#  "WBC", "White blood cell decreased", "Leukocytosis",
+#)
+#
 # Assign grade criteria
 # metadata atoxgr_criteria_ctcv4 used to implement NCI-CTCAEv4
 # user could change to atoxgr_criteria_ctcv5 to implement NCI-CTCAEv5
 # Note: Hyperglycemia and Hypophosphatemia not defined in NCI-CTCAEv5 so
 # user would need to amend look-up table grade_lookup
 # See (https://pharmaverse.github.io/admiral/articles/lab_grading.html#implement_ctcv5)
-grade_crit <- atoxgr_criteria_ctcv4
+#grade_crit <- atoxgr_criteria_ctcv4
 
 
 # Add ATOXDSCL and ATOXDSCH
-adlb <- adlb %>%
-  derive_vars_merged(
-    dataset_add = grade_lookup,
-    by_vars = vars(PARAMCD)
-  ) %>%
-  # Derive toxicity grade for low values ATOXGRL
-
-  derive_var_atoxgr_dir(
-    meta_criteria = grade_crit,
-    new_var = ATOXGRL,
-    tox_description_var = ATOXDSCL,
-    criteria_direction = "L",
-    get_unit_expr = extract_unit(PARAM)
-  ) %>%
-  # Derive toxicity grade for low values ATOXGRH
-  # default metadata atoxgr_criteria_ctcv4 used
-  derive_var_atoxgr_dir(
-    meta_criteria = grade_crit,
-    new_var = ATOXGRH,
-    tox_description_var = ATOXDSCH,
-    criteria_direction = "H",
-    get_unit_expr = extract_unit(PARAM)
-  ) %>%
-  # (Optional) derive overall grade ATOXGR (combining ATOXGRL and ATOXGRH)
-  derive_var_atoxgr() %>%
-  # Derive baseline toxicity grade for low values BTOXGRL
-  derive_var_base(
-    by_vars = vars(STUDYID, USUBJID, PARAMCD, BASETYPE),
-    source_var = ATOXGRL,
-    new_var = BTOXGRL
-  ) %>%
-  # Derive baseline toxicity grade for high values BTOXGRH
-  derive_var_base(
-    by_vars = vars(STUDYID, USUBJID, PARAMCD, BASETYPE),
-    source_var = ATOXGRH,
-    new_var = BTOXGRH
-  ) %>%
-  # Derive baseline toxicity grade for for overall grade BTOXGR
-  derive_var_base(
-    by_vars = vars(STUDYID, USUBJID, PARAMCD, BASETYPE),
-    source_var = ATOXGR,
-    new_var = BTOXGR
-  )
-
+#adlb <- adlb %>%
+#  derive_vars_merged(
+#    dataset_add = grade_lookup,
+#    by_vars = vars(PARAMCD)
+#  ) %>%
+#  # Derive toxicity grade for low values ATOXGRL
+#
+#  derive_var_atoxgr_dir(
+#    meta_criteria = grade_crit,
+#    new_var = ATOXGRL,
+#    tox_description_var = ATOXDSCL,
+#    criteria_direction = "L",
+#    get_unit_expr = extract_unit(PARAM)
+#  ) %>%
+#  # Derive toxicity grade for low values ATOXGRH
+#  # default metadata atoxgr_criteria_ctcv4 used
+#  derive_var_atoxgr_dir(
+#    meta_criteria = grade_crit,
+#    new_var = ATOXGRH,
+#    tox_description_var = ATOXDSCH,
+#    criteria_direction = "H",
+#    get_unit_expr = extract_unit(PARAM)
+#  ) %>%
+#  # (Optional) derive overall grade ATOXGR (combining ATOXGRL and ATOXGRH)
+#  derive_var_atoxgr() %>%
+#  # Derive baseline toxicity grade for low values BTOXGRL
+#  derive_var_base(
+#    by_vars = vars(STUDYID, USUBJID, PARAMCD, BASETYPE),
+#    source_var = ATOXGRL,
+#    new_var = BTOXGRL
+#  ) %>%
+#  # Derive baseline toxicity grade for high values BTOXGRH
+#  derive_var_base(
+#    by_vars = vars(STUDYID, USUBJID, PARAMCD, BASETYPE),
+#    source_var = ATOXGRH,
+#    new_var = BTOXGRH
+#  ) %>%
+#  # Derive baseline toxicity grade for for overall grade BTOXGR
+#  derive_var_base(
+#    by_vars = vars(STUDYID, USUBJID, PARAMCD, BASETYPE),
+#    source_var = ATOXGR,
+#    new_var = BTOXGR
+#  )
+#
 
 ## Calculate R2BASE, R2ANRLO and R2ANRHI ----
-adlb <- adlb %>%
+adlb7 <- adlb6 %>%
   derive_var_analysis_ratio(
     numer_var = AVAL,
-    denom_var = BASE
+    denom_var = A1LO
   ) %>%
   derive_var_analysis_ratio(
     numer_var = AVAL,
-    denom_var = ANRLO
-  ) %>%
-  derive_var_analysis_ratio(
-    numer_var = AVAL,
-    denom_var = ANRHI
+    denom_var = A1HI
   )
 
 ## SHIFT derivation ----
-adlb <- adlb %>%
-  # Derive shift from baseline for analysis indicator
-  derive_var_shift(
-    new_var = SHIFT1,
-    from_var = BNRIND,
-    to_var = ANRIND
-  ) %>%
-  # Derive shift from baseline for overall grade
-  restrict_derivation(
-    derivation = derive_var_shift,
-    args = params(
-      new_var = SHIFT2,
-      from_var = BTOXGR,
-      to_var = ATOXGR
-    ),
-    filter = !is.na(ATOXDSCL) | !is.na(ATOXDSCH)
-  )
-
+#adlb <- adlb %>%
+#  # Derive shift from baseline for analysis indicator
+#  derive_var_shift(
+#    new_var = SHIFT1,
+#    from_var = BNRIND,
+#    to_var = ANRIND
+#  ) %>%
+#  # Derive shift from baseline for overall grade
+#  restrict_derivation(
+#    derivation = derive_var_shift,
+#    args = params(
+#      new_var = SHIFT2,
+#      from_var = BTOXGR,
+#      to_var = ATOXGR
+#    ),
+#    filter = !is.na(ATOXDSCL) | !is.na(ATOXDSCH)
+#  )
+#
 ## Flag variables (ANL01FL, LVOTFL) ----
 # ANL01FL: Flag last result within an AVISIT for post-baseline records
 # LVOTFL: Flag last valid on-treatment record
-adlb <- adlb %>%
-  restrict_derivation(
-    derivation = derive_var_extreme_flag,
-    args = params(
-      by_vars = vars(USUBJID, PARAMCD, AVISIT),
-      order = vars(ADT, AVAL),
-      new_var = ANL01FL,
-      mode = "last"
-    ),
-    filter = !is.na(AVISITN) & ONTRTFL == "Y"
-  ) %>%
-  restrict_derivation(
-    derivation = derive_var_extreme_flag,
-    args = params(
-      by_vars = vars(USUBJID, PARAMCD),
-      order = vars(ADT, AVAL),
-      new_var = LVOTFL,
-      mode = "last"
-    ),
-    filter = ONTRTFL == "Y"
-  )
+#adlb <- adlb %>%
+#  restrict_derivation(
+#    derivation = derive_var_extreme_flag,
+#    args = params(
+#      by_vars = vars(USUBJID, PARAMCD, AVISIT),
+#      order = vars(ADT, AVAL),
+#      new_var = ANL01FL,
+#      mode = "last"
+#    ),
+#    filter = !is.na(AVISITN) & ONTRTFL == "Y"
+#  ) %>%
+#  restrict_derivation(
+#    derivation = derive_var_extreme_flag,
+#    args = params(
+#      by_vars = vars(USUBJID, PARAMCD),
+#      order = vars(ADT, AVAL),
+#      new_var = LVOTFL,
+#      mode = "last"
+#    ),
+#    filter = ONTRTFL == "Y"
+#  )
 
 ## Get treatment information ----
 # See also the "Visit and Period Variables" vignette
 # (https://pharmaverse.github.io/admiral/articles/visits_periods.html#treatment_bds)
-adlb <- adlb %>%
+adlbc <- adlb7 %>%
   # Assign TRTA, TRTP
   mutate(
     TRTP = TRT01P,
@@ -370,63 +336,63 @@ adlb <- adlb %>%
   )
 
 ## Get extreme values ----
-adlb <- adlb %>%
-  # get MINIMUM value
-  derive_extreme_records(
-    by_vars = vars(STUDYID, USUBJID, PARAMCD, BASETYPE),
-    order = vars(AVAL, ADT, AVISITN),
-    mode = "first",
-    # "AVISITN < 9997" to evaluate only real visits
-    filter = (!is.na(AVAL) & ONTRTFL == "Y" & AVISITN < 9997),
-    set_values_to = vars(
-      AVISITN = 9997,
-      AVISIT = "POST-BASELINE MINIMUM",
-      DTYPE = "MINIMUM"
-    )
-  ) %>%
-  # get MAXIMUM value
-  derive_extreme_records(
-    by_vars = vars(STUDYID, USUBJID, PARAMCD, BASETYPE),
-    order = vars(desc(AVAL), ADT, AVISITN),
-    mode = "first",
-    # "AVISITN < 9997" to evaluate only real visits
-    filter = (!is.na(AVAL) & ONTRTFL == "Y" & AVISITN < 9997),
-    set_values_to = vars(
-      AVISITN = 9998,
-      AVISIT = "POST-BASELINE MAXIMUM",
-      DTYPE = "MAXIMUM"
-    )
-  ) %>%
-  # get LOV value
-  derive_extreme_records(
-    by_vars = vars(STUDYID, USUBJID, PARAMCD, BASETYPE),
-    order = vars(ADT, AVISITN),
-    mode = "last",
-    # "AVISITN < 9997" to evaluate only real visits
-    filter = (ONTRTFL == "Y" & AVISITN < 9997),
-    set_values_to = vars(
-      AVISITN = 9999,
-      AVISIT = "POST-BASELINE LAST",
-      DTYPE = "LOV"
-    )
-  )
-
-## Get ASEQ ----
-adlb <- adlb %>%
-  # Calculate ASEQ
-  derive_var_obs_number(
-    new_var = ASEQ,
-    by_vars = vars(STUDYID, USUBJID),
-    order = vars(PARAMCD, ADT, AVISITN, VISITNUM),
-    check_type = "error"
-  )
+#adlb <- adlb %>%
+#  # get MINIMUM value
+#  derive_extreme_records(
+#    by_vars = vars(STUDYID, USUBJID, PARAMCD, BASETYPE),
+#    order = vars(AVAL, ADT, AVISITN),
+#    mode = "first",
+#    # "AVISITN < 9997" to evaluate only real visits
+#    filter = (!is.na(AVAL) & ONTRTFL == "Y" & AVISITN < 9997),
+#    set_values_to = vars(
+#      AVISITN = 9997,
+#      AVISIT = "POST-BASELINE MINIMUM",
+#      DTYPE = "MINIMUM"
+#    )
+#  ) %>%
+#  # get MAXIMUM value
+#  derive_extreme_records(
+#    by_vars = vars(STUDYID, USUBJID, PARAMCD, BASETYPE),
+#    order = vars(desc(AVAL), ADT, AVISITN),
+#    mode = "first",
+#    # "AVISITN < 9997" to evaluate only real visits
+#    filter = (!is.na(AVAL) & ONTRTFL == "Y" & AVISITN < 9997),
+#    set_values_to = vars(
+#      AVISITN = 9998,
+#      AVISIT = "POST-BASELINE MAXIMUM",
+#      DTYPE = "MAXIMUM"
+#    )
+#  ) %>%
+#  # get LOV value
+#  derive_extreme_records(
+#    by_vars = vars(STUDYID, USUBJID, PARAMCD, BASETYPE),
+#    order = vars(ADT, AVISITN),
+#    mode = "last",
+#    # "AVISITN < 9997" to evaluate only real visits
+#    filter = (ONTRTFL == "Y" & AVISITN < 9997),
+#    set_values_to = vars(
+#      AVISITN = 9999,
+#      AVISIT = "POST-BASELINE LAST",
+#      DTYPE = "LOV"
+#    )
+#  )
+#
+### Get ASEQ ----
+#adlb <- adlb %>%
+#  # Calculate ASEQ
+#  derive_var_obs_number(
+#    new_var = ASEQ,
+#    by_vars = vars(STUDYID, USUBJID),
+#    order = vars(PARAMCD, ADT, AVISITN, VISITNUM),
+#    check_type = "error"
+#  )
 
 # Add all ADSL variables
-adlb <- adlb %>%
-  derive_vars_merged(
-    dataset_add = select(adsl, !!!negate_vars(adsl_vars)),
-    by_vars = vars(STUDYID, USUBJID)
-  )
+#adlb <- adlb %>%
+#  derive_vars_merged(
+#    dataset_add = select(adsl, !!!negate_vars(adsl_vars)),
+#    by_vars = vars(STUDYID, USUBJID)
+#  )
 
 # Final Steps, Select final variables and Add labels
 # This process will be based on your metadata, no example given for this reason
@@ -434,5 +400,21 @@ adlb <- adlb %>%
 
 # Save output ----
 
-dir <- tempdir() # Change to whichever directory you want to save the dataset in
-saveRDS(adlb, file = file.path(dir, "adlb.rds"), compress = "bzip2")
+#dir <- tempdir() # Change to whichever directory you want to save the dataset in
+#saveRDS(adlb, file = file.path(dir, "adlb.rds"), compress = "bzip2")
+#saveRDS(adlbc, file = "./adam/adlbc.rds", compress = "bzip2")
+
+var_spec <- readxl::read_xlsx(path="./metadata/specs.xlsx", sheet = "Variables") %>%
+  dplyr::rename(type = "Data Type") %>%  rlang::set_names(tolower)
+
+
+adlbcall <- adlbc %>%
+  xportr::xportr_type(var_spec, "ADLBC", "message") %>%
+  xportr::xportr_length(var_spec, "ADLBC", "message") %>%
+  xportr::xportr_label(var_spec, "ADLBC", "message") %>%
+  xportr::xportr_order(var_spec, "ADLBC", "message") %>%
+  xportr::xportr_format(var_spec, "ADLBC", "message")
+
+adlbcall %>%
+  xportr::xportr_write(path="./adam/adlbc.xpt", label = "Subject-Level Analysis Dataset")
+
