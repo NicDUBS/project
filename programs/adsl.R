@@ -9,7 +9,7 @@ library(admiral)
 library(dplyr)
 library(lubridate)
 library(stringr)
-
+library(xportr)
 # Load source datasets ----
 
 # Use e.g. haven::read_sas to read in .sas7bdat, or other suitable functions
@@ -378,5 +378,17 @@ DCDECOD <- ds %>%
 # Save output ----
 
 adsl <- adsl09
-saveRDS(adsl09, file = file.path('./adam', "adsl.rds"), compress = "bzip2")
 
+var_spec <- readxl::read_xlsx(path="./metadata/specs.xlsx", sheet = "Variables") %>%
+  dplyr::rename(type = "Data Type") %>%  rlang::set_names(tolower)
+
+
+testnic <- adsl %>%
+  xportr::xportr_type(var_spec, "ADSL", "message") %>%
+  xportr::xportr_length(var_spec, "ADSL", "message") %>%
+  xportr::xportr_label(var_spec, "ADSL", "message") %>%
+  xportr::xportr_order(var_spec, "ADSL", "message") %>%
+  xportr::xportr_format(var_spec, "ADSL", "message")
+
+testnic %>%
+  xportr::xportr_write(path="./adam/adsl.xpt", label = "Subject-Level Analysis Dataset")
